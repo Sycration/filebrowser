@@ -1,10 +1,14 @@
 #![forbid(clippy::missing_docs_in_private_items)]
 
-use iced::{Column, Element, Row, Sandbox, Settings, Text, button, Button};
+use files::{button_list_gen, get_list_of_files};
+use iced::{
+    button, scrollable, Button, Column, Element, Length, Row, Sandbox, Scrollable, Settings, Text,
+};
 use root_dir::root_dir;
-use std::path::PathBuf;
-mod root_dir;
+use std::path::{Path, PathBuf};
+mod files;
 mod quit;
+mod root_dir;
 
 ///entry point, void main, yadda yadda
 fn main() -> iced::Result {
@@ -18,6 +22,9 @@ struct App {
     current_dir: PathBuf,
     up_dir_button: button::State,
     home_dir_button: button::State,
+    list_of_files: Vec<PathBuf>,
+    file_buttons: Vec<button::State>,
+    scroll: scrollable::State,
 }
 
 ///The Default (initial) state of the program is the user's home dir. If the user does not have
@@ -27,16 +34,23 @@ struct App {
 ///Also contains the state of all the other UI elements.
 impl Default for App {
     fn default() -> Self {
+        let current_dir = {
+            if let Some(home_dir) = dirs::home_dir() {
+                home_dir
+            } else {
+                root_dir::root_dir()
+            }
+        };
+        let mut states = Vec::new();
+        let list_of_files = files::get_list_of_files(&current_dir);
+        button_list_gen(&mut states, &list_of_files);
         Self {
-            current_dir: {
-                if let Some(home_dir) = dirs::home_dir() {
-                    home_dir
-                } else {
-                    root_dir::root_dir()
-                }
-            },
+            current_dir: current_dir.clone(),
             up_dir_button: button::State::default(),
             home_dir_button: button::State::default(),
+            list_of_files: list_of_files.clone(),
+            file_buttons: states,
+            scroll: scrollable::State::new(),
         }
     }
 }
@@ -68,12 +82,16 @@ impl Sandbox for App {
                         quit::quit(path);
                     } else if path.is_dir() {
                         self.current_dir = path.to_owned();
+                        self.list_of_files = get_list_of_files(&path);
+                        button_list_gen(&mut self.file_buttons, &self.list_of_files);
                     }
                 }
             }
             Message::UpDir => {
                 if let Some(dir) = self.current_dir.parent() {
-                    self.current_dir = dir.to_path_buf();
+                    self.list_of_files = get_list_of_files(dir);
+                    self.current_dir = (dir.clone()).to_path_buf();
+                    button_list_gen(&mut self.file_buttons, &self.list_of_files);
                 }
             }
         }
@@ -87,17 +105,33 @@ impl Sandbox for App {
         let button_row = Row::new()
             .padding(10)
             .spacing(10)
+            .push(Button::new(&mut self.up_dir_button, Text::new("go up")).on_press(Message::UpDir))
             .push(
-                Button::new(&mut self.up_dir_button, Text::new("go up"))
-                            .on_press(Message::UpDir)
-            )
-            .push(
-                Button::new(&mut self.home_dir_button, Text::new("home dir"))
-                .on_press(Message::ChDir(dirs::home_dir().unwrap_or_else(|| {root_dir()})))
+                Button::new(&mut self.home_dir_button, Text::new("home dir")).on_press(
+                    Message::ChDir(dirs::home_dir().unwrap_or_else(|| root_dir())),
+                ),
             );
+
+        let files = self
+            .file_buttons
+            .iter_mut()
+            .zip(self.list_of_files.iter())
+            .fold(
+                Scrollable::new(&mut self.scroll)
+                    .width(Length::Fill)
+                    .spacing(5),
+                |scroll, (a, b)| {
+                    scroll.push(
+                        Button::new(a, Text::new(b.file_name().unwrap().to_str().unwrap()))
+                            .on_press(Message::ChDir(b.to_path_buf())),
+                    )
+                },
+            );
+
         Column::new()
-        .push(dir_view)
-        .push(button_row)
-        .into()
+            .push(dir_view)
+            .push(button_row)
+            .push(files)
+            .into()
     }
 }
