@@ -133,7 +133,8 @@ impl Sandbox for App {
                     Message::ChDir(Some(dirs::home_dir().unwrap_or_else(|| root_dir()))),
                 ),
             );
-
+        
+        //Makes sure that the user does not accidentally select a file they do not mean to
         let confirm_bar = {
             match self.chosen_file {
                 true => Row::new()
