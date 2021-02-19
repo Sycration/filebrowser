@@ -18,7 +18,7 @@ pub fn main() -> iced::Result {
     App::run(Settings::default())
 }
 
-///All the things with a state in the app
+///All the things with a state in the app.
 ///This includes all the buttons and the scrolling panel
 struct App {
     current_dir: PathBuf,
