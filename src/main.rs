@@ -1,6 +1,6 @@
 #![forbid(clippy::missing_docs_in_private_items)]
 
-use files::{button_list_gen, get_list_of_files};
+use files::button_list_gen;
 use iced::{
     button, scrollable, Button, Column, Element, Length, Row, Sandbox, Scrollable, Settings, Space,
     Text,
@@ -25,7 +25,9 @@ struct App {
     up_dir_button: button::State,
     home_dir_button: button::State,
     list_of_files: Vec<PathBuf>,
+    list_of_dirs: Vec<PathBuf>,
     file_buttons: Vec<button::State>,
+    dir_buttons: Vec<button::State>,
     scroll: scrollable::State,
     chosen_file: bool,
     confirm_button: button::State,
@@ -47,15 +49,21 @@ impl Default for App {
                 root_dir::root_dir()
             }
         };
-        let mut states = Vec::new();
-        let list_of_files = files::get_list_of_files(&current_dir);
-        button_list_gen(&mut states, &list_of_files);
+        let mut file_states = Vec::new();
+        let mut dir_states = Vec::new();
+        let mut list = files::get_list(&current_dir);
+        list.1.sort();
+        list.0.sort();
+        button_list_gen(&mut file_states, &list.0);
+        button_list_gen(&mut dir_states, &list.1);
         Self {
             current_dir: current_dir.clone(),
             up_dir_button: button::State::default(),
             home_dir_button: button::State::default(),
-            list_of_files: list_of_files.clone(),
-            file_buttons: states,
+            list_of_files: list.0,
+            list_of_dirs: list.1,
+            file_buttons: file_states,
+            dir_buttons: dir_states,
             scroll: scrollable::State::new(),
             chosen_file: false,
             confirm_button: button::State::default(),
@@ -94,10 +102,17 @@ impl Sandbox for App {
                             self.chosen_file = true;
                             self.selected_file = path;
                         } else if path.is_dir() {
+                            self.list_of_dirs.clear();
+                            self.list_of_files.clear();
                             self.chosen_file = false;
                             self.current_dir = path.to_owned();
-                            self.list_of_files = get_list_of_files(&path);
-                            button_list_gen(&mut self.file_buttons, &self.list_of_files);
+                            let mut list = files::get_list(&self.current_dir);
+                            list.1.sort();
+                            list.0.sort();
+                            button_list_gen(&mut self.file_buttons, &list.0);
+                            button_list_gen(&mut self.dir_buttons, &list.1);
+                            self.list_of_dirs = list.1;
+                            self.list_of_files = list.0;
                         }
                     }
                 }
@@ -133,7 +148,7 @@ impl Sandbox for App {
                     Message::ChDir(Some(dirs::home_dir().unwrap_or_else(|| root_dir()))),
                 ),
             );
-        
+
         //Makes sure that the user does not accidentally select a file they do not mean to
         let confirm_bar = {
             match self.chosen_file {
@@ -162,23 +177,50 @@ impl Sandbox for App {
             .iter_mut()
             .zip(self.list_of_files.iter())
             .fold(
-                Scrollable::new(&mut self.scroll)
-                    .width(Length::Fill)
-                    .height(Length::FillPortion(12))
-                    .spacing(5),
+                Column::new().width(Length::Fill).spacing(5),
                 |scroll, (a, b)| {
                     scroll.push(
-                        Button::new(a, Text::new(correct_string(b)))
+                        Button::new(a, Text::new( b.file_name().unwrap().to_str().unwrap().to_string()))
                             .width(Length::Fill)
                             .on_press(Message::ChDir(Some(b.to_path_buf()))),
                     )
                 },
             );
 
+        let dirs = self
+            .dir_buttons
+            .iter_mut()
+            .zip(self.list_of_dirs.iter())
+            .fold(
+                Column::new().width(Length::Fill).spacing(5),
+                |scroll, (a, b)| {
+                    scroll.push(
+                        Button::new(
+                            a,
+                            Text::new({
+                                let mut x = b.file_name().unwrap().to_str().unwrap().to_string();
+                                x.push('/');
+                                x
+                            }),
+                        )
+                        .width(Length::Fill)
+                        .on_press(Message::ChDir(Some(b.to_path_buf()))),
+                    )
+                },
+            );
+
+        let scroll = Scrollable::new(&mut self.scroll)
+            .push(dirs)
+            .push(Space::new(Length::Units(0), Length::Units(15)))
+            .push(files)
+            .height(Length::FillPortion(12))
+            .scroller_width(30)
+            .scrollbar_width(40);
+
         Column::new()
             .push(dir_view)
             .push(button_row)
-            .push(files)
+            .push(scroll)
             .push(confirm_bar)
             .into()
     }
